@@ -1,0 +1,119 @@
+server:
+  port: 8083
+  servlet:
+    context-path: /order-service
+
+spring:
+  application:
+    name: order-service
+
+  datasource:
+    url: jdbc:mariadb://localhost:3307/order_db
+    username: root
+    password: 123456
+    driver-class-name: org.mariadb.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MariaDBDialect
+
+  cloud:
+    openfeign:
+      circuitbreaker:
+        enabled: false
+
+eureka:
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, circuitbreakers, circuitbreakerevents
+  endpoint:
+    health:
+      show-details: always
+  health:
+    circuitbreakers:
+      enabled: true
+
+feign:
+  client:
+    config:
+      default:
+        connectTimeout: 5000
+        readTimeout: 5000
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      customerService:
+        registerHealthIndicator: true
+        slidingWindowSize: 5
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10000
+        # Tự động chuyển OPEN -> HALF_OPEN sau 10s, không cần chờ request mới
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        permittedNumberOfCallsInHalfOpenState: 2
+        slidingWindowType: COUNT_BASED
+        minimumNumberOfCalls: 3
+        ignoreExceptions:
+          - iuh.fit.order_service.exception.NotFoundException
+      productService:
+        # Hiện trạng thái circuit breaker trong /actuator/health
+        registerHealthIndicator: true
+        # Theo dõi 5 request gần nhất để tính tỷ lệ lỗi
+        slidingWindowSize: 5
+        # Nếu >=50% trong 5 request bị lỗi → mở circuit
+        failureRateThreshold: 50
+        # Sau khi mở, chờ 10s rồi chuyển sang HALF_OPEN
+        waitDurationInOpenState: 10000
+        # Tự động chuyển OPEN -> HALF_OPEN sau 10s, không cần chờ request mới
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        # Ở HALF_OPEN cho 2 request thử lại, OK thì đóng, lỗi thì mở tiếp
+        permittedNumberOfCallsInHalfOpenState: 2
+        # Tính theo số lượng request (không phải thời gian)
+        slidingWindowType: COUNT_BASED
+        # Cần ít nhất 3 request mới bắt đầu tính tỷ lệ lỗi
+        minimumNumberOfCalls: 3
+        # Lỗi 404 không tính là failure, không ảnh hưởng circuit
+        ignoreExceptions:
+          - iuh.fit.order_service.exception.NotFoundException
+  retry:
+    instances:
+      customerService:
+        maxAttempts: 3
+        waitDuration: 1000
+        ignoreExceptions:
+          - iuh.fit.order_service.exception.NotFoundException
+      productService:
+        # Tắt retry cho productService, chỉ test circuit breaker
+        maxAttempts: 1
+  ratelimiter:
+    instances:
+      customerService:
+        limitForPeriod: 10
+        limitRefreshPeriod: 1s
+        timeoutDuration: 3s
+      productService:
+        limitForPeriod: 10
+        limitRefreshPeriod: 1s
+        timeoutDuration: 3s
+  timelimiter:
+    instances:
+      customerService:
+        timeoutDuration: 3s
+        cancelRunningFuture: true
+      productService:
+        timeoutDuration: 3s
+        cancelRunningFuture: true
